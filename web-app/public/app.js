@@ -1,0 +1,71 @@
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
+
+const firebase = initializeApp({ apiKey: 'AIzaSyAjjzbXJwUIr9DsWOlVlQto19em6f1_eCU', authDomain: 'oca-do-acai-c155f.firebaseapp.com', projectId: 'oca-do-acai-c155f', appId: '1:119818487892:web:1506325509e1da79b205c1' });
+const auth = getAuth(firebase);
+const $ = selector => document.querySelector(selector);
+const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const money = value => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const image = value => /^(assets\/images\/[\w.-]+|https:\/\/[^\s]+)$/i.test(value || '') ? (value.startsWith('assets/') ? '/' + value : value) : '/assets/images/acai.jpg';
+const statuses = ['recebido', 'em preparo', 'pronto', 'entregue'];
+let products = [], cart = new Map(), category = '', orders = [], knownOrders = null, adminAllowed = false;
+async function api(url, options = {}, admin = false) {
+  const headers = { ...options.headers };
+  if (options.body) headers['Content-Type'] = 'application/json';
+  if (admin) { if (!auth.currentUser) throw new Error('Faça login para continuar.'); headers.Authorization = `Bearer ${await auth.currentUser.getIdToken()}`; }
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 204) return null;
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Não foi possível concluir a operação.');
+  return data;
+}
+function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 3000); }
+function openDialog(id) { const dialog = $(id); if (!dialog.open) dialog.showModal(); }
+document.addEventListener('click', e => { const close = e.target.closest('[data-close]'); if (close) document.getElementById(close.dataset.close).close(); });
+async function loadProducts() {
+  try { products = await api('/api/products'); $('#menu-message').textContent = products.length ? '' : 'Nenhum produto disponível no momento.'; renderMenu(); if (adminAllowed) renderManage(); }
+  catch { $('#menu-message').textContent = 'Não foi possível carregar o cardápio. Atualize a página para tentar novamente.'; }
+}
+function renderMenu() {
+  const cats = [...new Set(products.map(p => p.category).filter(Boolean))];
+  $('#categories').innerHTML = `<button class="${!category ? 'active' : ''}" data-category="">Todos</button>` + cats.map(c => `<button class="${category === c ? 'active' : ''}" data-category="${escape(c)}">${escape(c)}</button>`).join('');
+  const term = $('#search').value.trim().toLocaleLowerCase('pt-BR');
+  const visible = products.filter(p => (!category || p.category === category) && `${p.name} ${p.description}`.toLocaleLowerCase('pt-BR').includes(term));
+  $('#products').innerHTML = visible.map(p => `<article class="product-card"><button class="detail-button" data-detail="${escape(p.id)}" aria-label="Ver detalhes de ${escape(p.name)}"><img src="${escape(image(p.imagePath))}" alt="${escape(p.name)}"></button><div class="product-body"><button class="detail-button" data-detail="${escape(p.id)}"><h3>${escape(p.name)}</h3></button><p>${escape(p.description)}</p><div class="product-bottom"><span class="price">${money(p.price)}</span><button class="add" data-add="${escape(p.id)}">+ Adicionar</button></div></div></article>`).join('');
+  if (products.length) $('#menu-message').textContent = visible.length ? '' : 'Nenhum produto encontrado.';
+}
+$('#categories').addEventListener('click', e => { const button = e.target.closest('[data-category]'); if (button) { category = button.dataset.category; renderMenu(); } });
+$('#search').addEventListener('input', renderMenu);
+document.addEventListener('click', e => {
+  const add = e.target.closest('[data-add]'); if (add) { const p = products.find(x => x.id === add.dataset.add); if (p) { cart.set(p.id, (cart.get(p.id) || 0) + 1); renderCart(); toast(`${p.name} adicionado à sacola.`); } }
+  const detail = e.target.closest('[data-detail]'); if (detail) { const p = products.find(x => x.id === detail.dataset.detail); if (!p) return; $('#product-detail').innerHTML = `<div class="dialog-head"><span class="eyebrow purple">${escape(p.category)}</span><button class="close" data-close="product-dialog" aria-label="Fechar">×</button></div><img class="detail-image" src="${escape(image(p.imagePath))}" alt="${escape(p.name)}"><h2>${escape(p.name)}</h2><p>${escape(p.description)}</p><p><strong>Ingredientes:</strong> ${escape(p.ingredients || 'Consulte a descrição ou pergunte à equipe.')}</p><div class="product-bottom"><strong class="price">${money(p.price)}</strong><button class="button" data-add="${escape(p.id)}">Adicionar à sacola</button></div>`; openDialog('#product-dialog'); }
+});
+function renderCart() {
+  $('#cart-count').textContent = [...cart.values()].reduce((a,b) => a+b,0);
+  const items = [...cart].map(([id,quantity]) => ({ product: products.find(p => p.id === id), quantity })).filter(x => x.product);
+  $('#cart-items').innerHTML = items.length ? items.map(({product:p,quantity}) => `<div class="cart-line"><div><strong>${escape(p.name)}</strong><p>${money(p.price)} por unidade</p></div><div class="quantity"><button data-minus="${escape(p.id)}" aria-label="Diminuir quantidade">−</button><span>${quantity}</span><button data-plus="${escape(p.id)}" aria-label="Aumentar quantidade">+</button></div></div>`).join('') : '<p>Sua sacola está vazia. Escolha algo no cardápio.</p>';
+  $('#cart-total').innerHTML = `<div class="total"><span>Total</span><span>${money(items.reduce((sum,x) => sum + Number(x.product.price)*x.quantity,0))}</span></div>`;
+  $('#checkout-form button').disabled = !items.length;
+}
+$('#open-cart').addEventListener('click', () => { renderCart(); openDialog('#cart-dialog'); });
+$('#cart-items').addEventListener('click', e => { const plus = e.target.closest('[data-plus]'), minus = e.target.closest('[data-minus]'); if (plus) cart.set(plus.dataset.plus, Math.min(99,(cart.get(plus.dataset.plus)||0)+1)); if (minus) { const n = (cart.get(minus.dataset.minus)||0)-1; if(n) cart.set(minus.dataset.minus,n); else cart.delete(minus.dataset.minus); } renderCart(); });
+$('#checkout-form').addEventListener('submit', async e => { e.preventDefault(); const form=e.currentTarget, button=form.querySelector('button'), data=new FormData(form); button.disabled=true; $('#checkout-message').textContent='Enviando pedido...'; try { const result=await api('/api/orders',{method:'POST',body:JSON.stringify({nomeCliente:data.get('nomeCliente'),mesa:data.get('mesa'),itens:[...cart].map(([produtoId,quantidade])=>({produtoId,quantidade}))})}); localStorage.setItem('oca-order',JSON.stringify(result)); cart.clear(); form.reset(); renderCart(); $('#cart-dialog').close(); toast(`Pedido ${result.id.slice(0,8).toUpperCase()} enviado!`); await track(); location.hash='acompanhar'; } catch(err) { $('#checkout-message').textContent=err.message; } finally { button.disabled=cart.size===0; } });
+async function track() { let order; try { order=JSON.parse(localStorage.getItem('oca-order')); } catch { return; } if(!order?.id || !order?.token)return; try { const data=await api(`/api/orders/${encodeURIComponent(order.id)}`,{headers:{'X-Order-Token':order.token}}); $('#tracking-content').innerHTML=`<span class="eyebrow purple">PEDIDO #${escape(data.id.slice(0,8).toUpperCase())}</span><h3>${escape(data.status)}</h3><p>${data.itens.map(i=>`${i.quantidade} × ${escape(i.nome)}`).join('<br>')}</p><strong>${money(data.total)}</strong>`; } catch { $('#tracking-content').textContent='Não foi possível atualizar seu pedido agora.'; } }
+$('#login-form').addEventListener('submit',async e=>{e.preventDefault(); const f=e.currentTarget, data=new FormData(f); $('#login-message').textContent='Entrando...'; try { await signInWithEmailAndPassword(auth,data.get('email'),data.get('password')); f.reset(); } catch { $('#login-message').textContent='Não foi possível entrar. Confira seu e-mail e senha.'; }});
+$('#logout').addEventListener('click',()=>signOut(auth));
+onAuthStateChanged(auth,async user=>{ adminAllowed=false; knownOrders=null; $('#admin-panel').hidden=true; $('#admin-login').hidden=!user; if (!user) { $('#login-message').textContent=''; return; } $('#admin-user').textContent=user.email; try { orders=await api('/api/orders',{},true); knownOrders=new Set(orders.map(o=>o.id)); adminAllowed=true; $('#admin-panel').hidden=false; $('#login-message').textContent=''; renderOrders(); renderManage(); } catch(err) { $('#admin-login').hidden=false; $('#login-message').textContent=err.message; await signOut(auth); $('#login-message').textContent=err.message; } });
+document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('selected',x===b)); $('#orders-panel').hidden=b.dataset.tab!=='orders'; $('#manage-panel').hidden=b.dataset.tab!=='manage';}));
+function date(value) { const seconds=value?._seconds ?? value?.seconds; return seconds ? new Date(seconds*1000).toLocaleString('pt-BR') : 'Data indisponível'; }
+function renderOrders() {
+  const filter=$('#order-filter').value, visible=orders.filter(o=>!filter||(o.status==='finalizado'?'entregue':o.status)===filter);
+  $('#orders').innerHTML=visible.length?visible.map(o=>`<article class="order"><div class="order-top"><div><strong>Pedido #${escape(o.id.slice(0,8).toUpperCase())}</strong><p>${escape(o.nomeCliente || o.userEmail || 'Cliente')} · ${escape(o.mesa || 'Mesa não informada')} · ${escape(date(o.criadoEm))}</p></div><label>Status <select data-status="${escape(o.id)}">${statuses.map(s=>`<option ${s===(o.status==='finalizado'?'entregue':o.status)?'selected':''}>${s}</option>`).join('')}</select></label></div><ul>${(o.itens||[]).map(i=>`<li>${Number(i.quantidade)||0} × ${escape(i.nome)} — ${money(i.precoUnitario)}</li>`).join('')}</ul><strong>Total: ${money(o.total)}</strong>${o.historico?.length?`<details><summary>Histórico</summary>${o.historico.map(h=>`<p>${escape(h.status)} · ${escape(date(h.data))} · ${escape(h.usuario)}</p>`).join('')}</details>`:''}</article>`).join(''):'<p>Nenhum pedido encontrado.</p>';
+}
+$('#order-filter').addEventListener('change',renderOrders);
+$('#orders').addEventListener('change',async e=>{const select=e.target.closest('[data-status]');if(!select)return;select.disabled=true;try{await api(`/api/orders/${encodeURIComponent(select.dataset.status)}/status`,{method:'PATCH',body:JSON.stringify({status:select.value})},true);toast('Status atualizado.');await refreshOrders();}catch(err){toast(err.message);renderOrders();}});
+async function refreshOrders(){if(!adminAllowed)return;try{const next=await api('/api/orders',{},true);if(knownOrders && next.some(o=>!knownOrders.has(o.id)))$('#order-notice').textContent='Novo pedido recebido!';knownOrders=new Set(next.map(o=>o.id));orders=next;renderOrders();}catch(err){$('#order-notice').textContent=err.message;}}
+function renderManage(){ $('#manage-products').innerHTML=products.map(p=>`<div class="manage-row"><div><strong>${escape(p.name)}</strong><p>${escape(p.category)} · ${money(p.price)}</p></div><div class="row-actions"><button class="outline" data-edit="${escape(p.id)}">Editar</button><button class="outline" data-delete="${escape(p.id)}">Excluir</button></div></div>`).join('')||'<p>Nenhum produto cadastrado.</p>'; }
+function editProduct(p={}){const f=$('#product-form');f.reset();for(const key of ['id','name','description','ingredients','category','price','imagePath'])f.elements[key].value=p[key]??'';$('#edit-title').textContent=p.id?'Editar produto':'Novo produto';$('#product-message').textContent='';openDialog('#edit-dialog');}
+$('#new-product').addEventListener('click',()=>editProduct());
+$('#manage-products').addEventListener('click',async e=>{const edit=e.target.closest('[data-edit]'), del=e.target.closest('[data-delete]');if(edit)editProduct(products.find(p=>p.id===edit.dataset.edit));if(del&&confirm('Excluir este produto permanentemente?'))try{await api(`/api/products/${encodeURIComponent(del.dataset.delete)}`,{method:'DELETE'},true);await loadProducts();toast('Produto excluído.');}catch(err){toast(err.message);}});
+$('#product-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.currentTarget,data=Object.fromEntries(new FormData(f));data.price=Number(data.price);const id=data.id;delete data.id;const button=f.querySelector('button[type=submit]');button.disabled=true;try{await api('/api/products'+(id?'/'+encodeURIComponent(id):''),{method:id?'PUT':'POST',body:JSON.stringify(data)},true);$('#edit-dialog').close();await loadProducts();toast('Produto salvo.');}catch(err){$('#product-message').textContent=err.message;}finally{button.disabled=false;}});
+loadProducts(); renderCart(); track(); setInterval(()=>{ track(); refreshOrders(); },10000); setInterval(loadProducts,30000);
