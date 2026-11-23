@@ -3,6 +3,12 @@ import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from
 
 const firebase = initializeApp({ apiKey: 'AIzaSyAjjzbXJwUIr9DsWOlVlQto19em6f1_eCU', authDomain: 'oca-do-acai-c155f.firebaseapp.com', projectId: 'oca-do-acai-c155f', appId: '1:119818487892:web:1506325509e1da79b205c1' });
 const auth = getAuth(firebase);
+if (/^\/admin\/?$/.test(location.pathname)) {
+  document.body.classList.add('admin-page');
+  document.title = 'Administração | Oca do Açaí';
+} else {
+  document.body.classList.add('customer-page');
+}
 const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const money = value => Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

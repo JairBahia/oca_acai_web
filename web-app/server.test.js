@@ -15,6 +15,9 @@ before(async () => {
 after(() => server?.kill());
 test('documentação e página inicial são servidas', async () => {
   assert.equal((await fetch(base)).status, 200);
+  const adminPage = await fetch(base + '/admin');
+  assert.equal(adminPage.status, 200);
+  assert.match(await adminPage.text(), /Painel administrativo/);
   const docs = await (await fetch(base + '/api/openapi.json')).json();
   assert.equal(docs.openapi, '3.0.3');
   assert.ok(docs.paths['/api/orders']);

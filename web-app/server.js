@@ -16,6 +16,7 @@ const admins = new Set((process.env.ADMIN_UIDS || '').split(',').map(s => s.trim
 const statuses = ['recebido', 'em preparo', 'pronto', 'entregue'];
 const hash = s => createHash('sha256').update(s).digest('hex');
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const database = fn => wrap(async (req, res, next) => { await applicationDefault().getAccessToken(); return fn(req, res, next); });
 const clean = (v, max) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 const auth = wrap(async (req, res, next) => {
   const token = req.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
@@ -46,14 +47,15 @@ const docs = { openapi: '3.0.3', info: { title: 'Oca do Açaí API', version: '1
 } };
 app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(docs));
 app.get('/api/openapi.json', (_req, res) => res.json(docs));
-app.get('/api/products', wrap(async (_req, res) => { const snap = await db.collection('cardapio').get(); res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.category || '').localeCompare(b.category || '', 'pt-BR'))); }));
-app.post('/api/products', auth, wrap(async (req, res) => { const ref = await db.collection('cardapio').add(product(req.body)); res.status(201).json({ id: ref.id }); }));
-app.put('/api/products/:id', auth, wrap(async (req, res) => { const ref = db.collection('cardapio').doc(req.params.id); if (!(await ref.get()).exists) return res.status(404).json({ error: 'Produto não encontrado.' }); await ref.update(product(req.body)); res.json({ ok: true }); }));
-app.delete('/api/products/:id', auth, wrap(async (req, res) => { await db.collection('cardapio').doc(req.params.id).delete(); res.sendStatus(204); }));
+app.get('/api/products', database(async (_req, res) => { const snap = await db.collection('cardapio').get(); res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.category || '').localeCompare(b.category || '', 'pt-BR'))); }));
+app.post('/api/products', auth, database(async (req, res) => { const ref = await db.collection('cardapio').add(product(req.body)); res.status(201).json({ id: ref.id }); }));
+app.put('/api/products/:id', auth, database(async (req, res) => { const ref = db.collection('cardapio').doc(req.params.id); if (!(await ref.get()).exists) return res.status(404).json({ error: 'Produto não encontrado.' }); await ref.update(product(req.body)); res.json({ ok: true }); }));
+app.delete('/api/products/:id', auth, database(async (req, res) => { await db.collection('cardapio').doc(req.params.id).delete(); res.sendStatus(204); }));
 app.post('/api/orders', wrap(async (req, res) => {
   const nomeCliente = clean(req.body.nomeCliente, 100), mesa = clean(req.body.mesa, 60), items = req.body.itens;
   if (!nomeCliente || !mesa || !Array.isArray(items) || !items.length || items.length > 50) return res.status(400).json({ error: 'Informe nome, mesa e itens válidos.' });
   const ids = new Set(); for (const item of items) { if (typeof item.produtoId !== 'string' || !item.produtoId || item.produtoId.includes('/') || ids.has(item.produtoId) || !Number.isInteger(item.quantidade) || item.quantidade < 1 || item.quantidade > 99) return res.status(400).json({ error: 'Itens inválidos.' }); ids.add(item.produtoId); }
+  await applicationDefault().getAccessToken();
   const token = randomBytes(32).toString('base64url'), ref = db.collection('pedidos').doc();
   await db.runTransaction(async tx => {
     const refs = items.map(i => db.collection('cardapio').doc(i.produtoId)); const snapshots = await tx.getAll(...refs);
@@ -62,11 +64,12 @@ app.post('/api/orders', wrap(async (req, res) => {
   });
   res.status(201).json({ id: ref.id, token });
 }));
-app.get('/api/orders', auth, wrap(async (_req, res) => { const snap = await db.collection('pedidos').orderBy('criadoEm', 'desc').limit(200).get(); res.json(snap.docs.map(d => { const { trackingHash, ...data } = d.data(); return { id: d.id, ...data }; })); }));
-app.get('/api/orders/:id', wrap(async (req, res) => { const snap = await db.collection('pedidos').doc(req.params.id).get(), token = req.get('x-order-token') || ''; const expected = snap.exists ? snap.data().trackingHash : ''; const actual = hash(token); if (!expected || expected.length !== actual.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) return res.status(404).json({ error: 'Pedido não encontrado.' }); const d = snap.data(); res.json({ id: snap.id, status: d.status, total: d.total, itens: d.itens, criadoEm: d.criadoEm }); }));
-app.patch('/api/orders/:id/status', auth, wrap(async (req, res) => { const status = clean(req.body.status, 30); if (!statuses.includes(status)) return res.status(400).json({ error: 'Status inválido.' }); const ref = db.collection('pedidos').doc(req.params.id); await db.runTransaction(async tx => { const snap = await tx.get(ref); if (!snap.exists) throw Object.assign(new Error('Pedido não encontrado.'), { status: 404 }); tx.update(ref, { status, historico: FieldValue.arrayUnion({ status, data: Timestamp.now(), usuario: req.user.email || req.user.uid }) }); }); res.json({ ok: true }); }));
+app.get('/api/orders', auth, database(async (_req, res) => { const snap = await db.collection('pedidos').orderBy('criadoEm', 'desc').limit(200).get(); res.json(snap.docs.map(d => { const { trackingHash, ...data } = d.data(); return { id: d.id, ...data }; })); }));
+app.get('/api/orders/:id', database(async (req, res) => { const snap = await db.collection('pedidos').doc(req.params.id).get(), token = req.get('x-order-token') || ''; const expected = snap.exists ? snap.data().trackingHash : ''; const actual = hash(token); if (!expected || expected.length !== actual.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) return res.status(404).json({ error: 'Pedido não encontrado.' }); const d = snap.data(); res.json({ id: snap.id, status: d.status, total: d.total, itens: d.itens, criadoEm: d.criadoEm }); }));
+app.patch('/api/orders/:id/status', auth, database(async (req, res) => { const status = clean(req.body.status, 30); if (!statuses.includes(status)) return res.status(400).json({ error: 'Status inválido.' }); const ref = db.collection('pedidos').doc(req.params.id); await db.runTransaction(async tx => { const snap = await tx.get(ref); if (!snap.exists) throw Object.assign(new Error('Pedido não encontrado.'), { status: 404 }); tx.update(ref, { status, historico: FieldValue.arrayUnion({ status, data: Timestamp.now(), usuario: req.user.email || req.user.uid }) }); }); res.json({ ok: true }); }));
 const root = path.dirname(fileURLToPath(import.meta.url));
 app.use('/assets/images', express.static(path.join(root, '../assets/images')));
+app.get(['/admin', '/admin/'], (_req, res) => res.sendFile(path.join(root, 'public', 'index.html')));
 app.use(express.static(path.join(root, 'public')));
 app.use((err, _req, res, _next) => { console.error(err.message); res.status(err.status || 500).json({ error: err.status ? err.message : 'Não foi possível concluir a operação.' }); });
 app.listen(Number(process.env.PORT) || 3000, () => console.log('Oca web iniciada'));
