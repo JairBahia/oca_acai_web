@@ -23,6 +23,8 @@ npm start
 
 Abra `http://localhost:3000`. Para autorizar mais de um administrador, separe os UIDs por vírgula. Adicione o domínio de hospedagem aos domínios autorizados do Firebase Authentication antes de usar o login fora de localhost. O arquivo `.env.example` documenta as variáveis; elas devem ser fornecidas pelo ambiente, pois o servidor não carrega arquivos `.env` automaticamente.
 
+O painel fica em `/admin`. Para habilitar o botão **Continuar com Google**, ative o provedor Google em Authentication → Método de login, informe o nome público e o e-mail de suporte e salve. Verifique em Authentication → Configurações → Domínios autorizados se o domínio usado no navegador está autorizado. Depois do primeiro login Google, copie o UID correspondente na lista de usuários do Authentication e acrescente-o a `ADMIN_UIDS` no ambiente do servidor. Reinicie o servidor para aplicar a alteração. O login Google identifica a conta, mas não concede acesso administrativo automaticamente.
+
 A documentação interativa está em `/api/docs` e o documento OpenAPI em `/api/openapi.json`. O formulário administrativo aceita uma URL HTTPS de imagem ou um caminho já existente em `assets/images/`.
 
 ## Compatibilidade e operação
