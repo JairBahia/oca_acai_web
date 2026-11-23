@@ -13,6 +13,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '64kb' }));
 const admins = new Set((process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean));
+const allowAnyAuthenticatedAdmin = process.env.ALLOW_ANY_AUTHENTICATED_ADMIN === 'true';
 const statuses = ['recebido', 'em preparo', 'pronto', 'entregue'];
 const hash = s => createHash('sha256').update(s).digest('hex');
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -23,7 +24,7 @@ const auth = wrap(async (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Faça login para continuar.' });
   try { req.user = await getAuth().verifyIdToken(token, true); }
   catch { return res.status(401).json({ error: 'Sessão inválida ou expirada.' }); }
-  if (!admins.has(req.user.uid)) return res.status(403).json({ error: 'Conta sem permissão de administrador.' });
+  if (!allowAnyAuthenticatedAdmin && !admins.has(req.user.uid)) return res.status(403).json({ error: 'Conta sem permissão de administrador.' });
   next();
 });
 const product = data => {

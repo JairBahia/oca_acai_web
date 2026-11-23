@@ -32,3 +32,17 @@ test('pedido inválido é recusado antes de acessar o banco', async () => {
   const response = await fetch(base + '/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nomeCliente: '', mesa: '', itens: [] }) });
   assert.equal(response.status, 400);
 });
+test('modo de avaliação ainda exige token Firebase válido', async () => {
+  const trial = spawn(process.execPath, ['server.js'], { cwd: import.meta.dirname, env: { ...process.env, PORT: '31988', ALLOW_ANY_AUTHENTICATED_ADMIN: 'true' }, stdio: 'ignore' });
+  const trialBase = 'http://127.0.0.1:31988';
+  try {
+    let ready = false;
+    for (let i = 0; i < 100; i++) {
+      try { if ((await fetch(trialBase)).ok) { ready = true; break; } } catch {}
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(ready, 'Servidor de avaliação não iniciou');
+    assert.equal((await fetch(trialBase + '/api/orders')).status, 401);
+    assert.equal((await fetch(trialBase + '/api/orders', { headers: { Authorization: 'Bearer token-invalido' } })).status, 401);
+  } finally { trial.kill(); }
+});

@@ -25,6 +25,8 @@ Abra `http://localhost:3000`. Para autorizar mais de um administrador, separe os
 
 O painel fica em `/admin`. Para habilitar o botão **Continuar com Google**, ative o provedor Google em Authentication → Método de login, informe o nome público e o e-mail de suporte e salve. Verifique em Authentication → Configurações → Domínios autorizados se o domínio usado no navegador está autorizado. Depois do primeiro login Google, copie o UID correspondente na lista de usuários do Authentication e acrescente-o a `ADMIN_UIDS` no ambiente do servidor. Reinicie o servidor para aplicar a alteração. O login Google identifica a conta, mas não concede acesso administrativo automaticamente.
 
+Para uma avaliação em que todas as contas autenticadas do projeto devam acessar o painel inteiro, defina `$env:ALLOW_ANY_AUTHENTICATED_ADMIN = 'true'` antes de executar `npm start`. Isso permite que **qualquer conta autenticada no Firebase** veja pedidos e cadastre, edite ou exclua produtos no banco conectado, inclusive dados reais. Por padrão, essa opção fica desativada e somente os UIDs em `ADMIN_UIDS` têm acesso. Não habilite em uma instalação pública com dados reais sem aceitar esse efeito; prefira um projeto separado de demonstração. Reinicie o servidor após mudar a variável.
+
 A documentação interativa está em `/api/docs` e o documento OpenAPI em `/api/openapi.json`. O formulário administrativo aceita uma URL HTTPS de imagem ou um caminho já existente em `assets/images/`.
 
 ## Compatibilidade e operação
