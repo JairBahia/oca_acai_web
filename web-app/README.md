@@ -27,13 +27,25 @@ O painel fica em `/admin`. Para habilitar o botão **Continuar com Google**, ati
 
 Para uma avaliação em que todas as contas autenticadas do projeto devam acessar o painel inteiro, defina `$env:ALLOW_ANY_AUTHENTICATED_ADMIN = 'true'` antes de executar `npm start`. Isso permite que **qualquer conta autenticada no Firebase** veja pedidos e cadastre, edite ou exclua produtos no banco conectado, inclusive dados reais. Por padrão, essa opção fica desativada e somente os UIDs em `ADMIN_UIDS` têm acesso. Não habilite em uma instalação pública com dados reais sem aceitar esse efeito; prefira um projeto separado de demonstração. Reinicie o servidor após mudar a variável.
 
-A documentação interativa está em `/api/docs` e o documento OpenAPI em `/api/openapi.json`. O formulário administrativo aceita uma URL HTTPS de imagem ou um caminho já existente em `assets/images/`.
+A documentação interativa está em `/api/docs` e o documento OpenAPI em `/api/openapi.json`. O formulário administrativo aceita upload de imagens JPEG, PNG ou WebP de até 4 MB, URL HTTPS ou caminho já existente em `assets/images/`. As imagens enviadas são divididas em partes e armazenadas na coleção `imagensCardapio` do Firestore; não é necessário ativar o Firebase Storage. As imagens geram leituras, gravações e armazenamento no Firestore. Os arquivos enviados são independentes dos produtos: substituí-los, cancelar o formulário depois do envio ou excluir um produto não exclui automaticamente a imagem correspondente.
 
 ## Compatibilidade e operação
 
 Os produtos existentes mantêm os campos `name`, `description`, `price`, `imagePath` e `category`. O campo `ingredients` é opcional para produtos antigos. Os pedidos web mantêm `itens`, `total`, `status` e `criadoEm`, acrescentando nome, mesa, histórico e um hash do token de acompanhamento. Pedidos antigos sem nome ou mesa continuam visíveis no painel. O status antigo `finalizado` é apresentado como `entregue` no painel web.
 
-O painel consulta a API a cada 10 segundos; o cardápio é atualizado a cada 30 segundos. O acompanhamento é restrito ao token salvo no navegador que fez o pedido. Apagar os dados do navegador remove esse acesso.
+O aplicativo Flutter original utiliza `Image.asset`; ele não exibe automaticamente as novas imagens que usam `/api/images/...`. Caso o aplicativo antigo continue em uso, será preciso adaptá-lo para buscar essas imagens na API publicada.
+
+Pedidos e status são transmitidos pelo servidor em tempo real, com reconexão automática. O cardápio é atualizado a cada 30 segundos. O acompanhamento é restrito ao token salvo no navegador que fez o pedido. Apagar os dados do navegador remove esse acesso. Conexões ativas geram leituras do Firestore; monitore as cotas do projeto.
+
+## Validação
+
+Execute `npm test` para os testes sem serviços externos. Para o fluxo integrado, instale Java 21 ou superior e Firebase CLI e execute, nesta pasta:
+
+```powershell
+firebase emulators:exec --only auth,firestore --project demo-oca-local --config firebase.test.json "node --test integration.test.js"
+```
+
+Esse comando usa o projeto de demonstração `demo-oca-local` e emuladores locais; não faz alterações no banco real. O teste cobre autenticação de demonstração, produto, imagem, pedido, acompanhamento, fluxo de eventos e histórico. Uma apresentação real também deve ser conferida em navegadores e dispositivos diferentes.
 
 Antes de disponibilizar o sistema, configure HTTPS, revise as regras existentes do Firestore e os acessos de outras aplicações: a proteção da API não substitui regras do Firebase para clientes que acessam o Firestore diretamente. Revise também autenticação, limites de uso e backups no ambiente de produção. A API usa Firebase Admin e, portanto, não depende das regras de segurança do cliente.
 

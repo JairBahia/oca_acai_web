@@ -24,7 +24,7 @@ test('documentação e página inicial são servidas', async () => {
   assert.equal((await fetch(base + '/api/docs/')).status, 200);
 });
 test('rotas administrativas exigem autenticação', async () => {
-  for (const [path, method] of [['/api/orders', 'GET'], ['/api/products', 'POST'], ['/api/products/item', 'PUT'], ['/api/products/item', 'DELETE'], ['/api/orders/item/status', 'PATCH']]) {
+  for (const [path, method] of [['/api/orders', 'GET'], ['/api/orders/stream', 'GET'], ['/api/images', 'POST'], ['/api/products', 'POST'], ['/api/products/item', 'PUT'], ['/api/products/item', 'DELETE'], ['/api/orders/item/status', 'PATCH']]) {
     assert.equal((await fetch(base + path, { method })).status, 401);
   }
 });
